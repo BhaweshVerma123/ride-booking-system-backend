@@ -62,10 +62,10 @@ public class WalletServiceImpl implements WalletService {
                 .amount(amount)
                 .build();
 
-        walletTransactionService.createNewWalletTransaction(
-                modelMapper.map(walletTransaction, com.example.project.uber.uberApp.dto.WalletTransactionDto.class)
-        );
-//        wallet.getTransactions().add(walletTransaction);
+       // walletTransactionService.createNewWalletTransaction(
+         //       modelMapper.map(walletTransaction, com.example.project.uber.uberApp.dto.WalletTransactionDto.class)
+        //);
+         wallet.getTransactions().add(walletTransaction);
 
         return walletRepository.save(wallet);
     }

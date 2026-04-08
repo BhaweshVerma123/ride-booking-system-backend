@@ -11,6 +11,7 @@ import com.example.project.uber.uberApp.exception.ResourceNotFoundException;
 import com.example.project.uber.uberApp.repositories.RideRequestRepository;
 import com.example.project.uber.uberApp.repositories.RiderRepository;
 import com.example.project.uber.uberApp.services.DriverService;
+import com.example.project.uber.uberApp.services.RatingService;
 import com.example.project.uber.uberApp.services.RideService;
 import com.example.project.uber.uberApp.services.RiderService;
 import com.example.project.uber.uberApp.strategies.RideStrategyManager;
@@ -20,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
@@ -36,6 +38,7 @@ public class RiderServiceImpl implements RiderService {
     private final RiderRepository riderRepository;
     private final RideService rideService;
     private final DriverService driverService;
+    private final RatingService ratingService;
 
     @Override
     @Transactional
@@ -45,17 +48,15 @@ public class RiderServiceImpl implements RiderService {
         rideRequest.setRideRequestStatus(RideRequestStatus.PENDING);
         rideRequest.setRider(rider);
 
-        // Calculate fare
         Double fare = rideStrategyManager.rideFareCalculationStrategy().calculateFare(rideRequest);
         rideRequest.setFare(fare);
 
         RideRequest savedRideRequest = rideRequestRepository.save(rideRequest);
 
-        // Temporarily set drivers as empty list to avoid compilation error
-        List<Driver> drivers = Collections.emptyList();
+        List<Driver> drivers = rideStrategyManager
+                .driverMatchingStrategy(rider.getRating()).findMatchingDrivers(rideRequest);
 
-        // TODO : Send notification to all the drivers about this ride request
-        log.info("Ride request {} sent to {} drivers", savedRideRequest.getId(), drivers.size());
+//        TODO : Send notification to all the drivers about this ride request
 
         return modelMapper.map(savedRideRequest, RideRequestDto.class);
     }
@@ -65,12 +66,12 @@ public class RiderServiceImpl implements RiderService {
         Rider rider = getCurrentRider();
         Ride ride = rideService.getRideById(rideId);
 
-        if (!rider.equals(ride.getRider())) {
-            throw new RuntimeException("Rider does not own this ride with id: " + rideId);
+        if(!rider.equals(ride.getRider())) {
+            throw new RuntimeException(("Rider does not own this ride with id: "+rideId));
         }
 
-        if (!ride.getRideStatus().equals(RideStatus.CONFIRMED)) {
-            throw new RuntimeException("Ride cannot be cancelled, invalid status: " + ride.getRideStatus());
+        if(!ride.getRideStatus().equals(RideStatus.CONFIRMED)) {
+            throw new RuntimeException("Ride cannot be cancelled, invalid status: "+ride.getRideStatus());
         }
 
         Ride savedRide = rideService.updateRideStatus(ride, RideStatus.CANCELLED);
@@ -81,8 +82,18 @@ public class RiderServiceImpl implements RiderService {
 
     @Override
     public DriverDto rateDriver(Long rideId, Integer rating) {
-        // TODO: Implement driver rating logic
-        return null;
+        Ride ride = rideService.getRideById(rideId);
+        Rider rider = getCurrentRider();
+
+        if(!rider.equals(ride.getRider())) {
+            throw new RuntimeException("Rider is not the owner of this Ride");
+        }
+
+        if(!ride.getRideStatus().equals(RideStatus.ENDED)) {
+            throw new RuntimeException("Ride status is not Ended hence cannot start rating, status: "+ride.getRideStatus());
+        }
+
+        return ratingService.rateDriver(ride, rating);
     }
 
     @Override
@@ -94,13 +105,15 @@ public class RiderServiceImpl implements RiderService {
     @Override
     public Page<RideDto> getAllMyRides(PageRequest pageRequest) {
         Rider currentRider = getCurrentRider();
-        return rideService.getAllRidesOfRider(currentRider, pageRequest)
-                .map(ride -> modelMapper.map(ride, RideDto.class));
+        return rideService.getAllRidesOfRider(currentRider, pageRequest).map(
+                ride -> modelMapper.map(ride, RideDto.class)
+        );
     }
 
     @Override
     public Rider createNewRider(User user) {
-        Rider rider = Rider.builder()
+        Rider rider = Rider
+                .builder()
                 .user(user)
                 .rating(0.0)
                 .build();
@@ -109,8 +122,11 @@ public class RiderServiceImpl implements RiderService {
 
     @Override
     public Rider getCurrentRider() {
-        // TODO : implement Spring Security to get the logged-in rider
-        return riderRepository.findById(1L)
-                .orElseThrow(() -> new ResourceNotFoundException("Rider not found with id: " + 1));
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        return riderRepository.findByUser(user).orElseThrow(() -> new ResourceNotFoundException(
+                "Rider not associated with user with id: "+user.getId()
+        ));
     }
+
 }

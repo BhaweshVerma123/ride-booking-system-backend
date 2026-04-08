@@ -6,19 +6,18 @@ import com.example.project.uber.uberApp.dto.RiderDto;
 import com.example.project.uber.uberApp.entities.Driver;
 import com.example.project.uber.uberApp.entities.Ride;
 import com.example.project.uber.uberApp.entities.RideRequest;
+import com.example.project.uber.uberApp.entities.User;
 import com.example.project.uber.uberApp.entities.enums.RideRequestStatus;
 import com.example.project.uber.uberApp.entities.enums.RideStatus;
 import com.example.project.uber.uberApp.exception.ResourceNotFoundException;
 import com.example.project.uber.uberApp.repositories.DriverRepository;
-import com.example.project.uber.uberApp.services.DriverService;
-import com.example.project.uber.uberApp.services.PaymentService;
-import com.example.project.uber.uberApp.services.RideRequestService;
-import com.example.project.uber.uberApp.services.RideService;
+import com.example.project.uber.uberApp.services.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -33,6 +32,7 @@ public class DriverServiceImpl implements DriverService {
     private final RideService rideService;
     private final ModelMapper modelMapper;
     private final PaymentService paymentService;
+    private final RatingService ratingService;
 
     @Override
     public RiderDto requestRide(Long rideId) {
@@ -99,6 +99,7 @@ public class DriverServiceImpl implements DriverService {
         Ride savedRide = rideService.updateRideStatus(ride, RideStatus.ONGOING);
 
         paymentService.createNewPayment(savedRide);
+        ratingService.createNewRating(savedRide);
 
         return modelMapper.map(savedRide, RideDto.class);
     }
@@ -124,7 +125,17 @@ public class DriverServiceImpl implements DriverService {
 
     @Override
     public RiderDto rateRider(Long rideId, Integer rating) {
-        return null;
+        Ride ride = rideService.getRideById(rideId);
+        Driver driver = getCurrentDriver();
+        if(!driver.equals(ride.getDriver())){
+            throw new RuntimeException("Driver is not the owner of these ride");
+        }
+        if(!ride.getRideStatus().equals(RideStatus.ENDED)){
+            throw new RuntimeException("Ride status is not ENDED hence cannot start rating " + ride.getRideStatus());
+        }
+
+      return  ratingService.rateRider(ride,rating);
+
     }
 
     @Override
@@ -152,8 +163,16 @@ public class DriverServiceImpl implements DriverService {
     }
 
     @Override
+    public Driver createNewDriver(Driver driver) {
+        return driverRepository.save(driver);
+    }
+
+    @Override
     public Driver getCurrentDriver() {
-        return driverRepository.findById(3L)
-                .orElseThrow(() -> new ResourceNotFoundException("Driver not found with id " + 2));
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+
+        return driverRepository.findByUser(user)
+                .orElseThrow(() -> new ResourceNotFoundException("Driver not associated with  id " + user.getId()));
     }
 }

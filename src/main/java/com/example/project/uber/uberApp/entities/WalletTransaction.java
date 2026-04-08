@@ -15,6 +15,11 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Entity
 @Builder
+@Table(indexes = {
+        @Index(name ="idx_wallet_transaction_wallet", columnList = "wallet-id"),
+        @Index(name ="idx_wallet_transaction_ride", columnList = "ride-id")
+
+})
 public class WalletTransaction {
 
     @Id

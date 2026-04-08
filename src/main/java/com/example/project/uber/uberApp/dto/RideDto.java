@@ -27,7 +27,7 @@ public class RideDto {
 
     private RideStatus rideStatus;
 
-    private String otp;
+
 
 
     private PaymentMethod paymentMethod;
